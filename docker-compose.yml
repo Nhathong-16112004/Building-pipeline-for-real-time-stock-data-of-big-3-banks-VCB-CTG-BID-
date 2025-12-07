@@ -1,0 +1,108 @@
+services:
+  # ========================
+  # Zookeeper
+  # ========================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  # ========================
+  # Kafka
+  # ========================
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"      
+      - "29092:29092"    
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true" 
+
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ========================
+  # PostgreSQL
+  # ========================
+  postgres:
+    image: postgres:14
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: spark_user
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: stockdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # ========================
+  # Apache Superset
+  # ========================
+  superset:
+    build: ./superset        
+    container_name: superset
+    depends_on:
+      - postgres
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: 'secret'
+    command: >
+      /bin/bash -c "
+      superset db upgrade &&
+      superset fab create-admin --username admin --firstname Admin --lastname User --email admin@example.com --password admin &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088
+      "
+
+
+  # ========================
+  # Apache Spark
+  # ========================
+  spark:
+    image: apache/spark:3.5.0
+    container_name: spark_app
+    depends_on:
+      kafka:
+        condition: service_healthy  
+      postgres:
+        condition: service_started
+    user: "0"
+    environment:
+      - SPARK_MODE=driver
+    volumes:
+      - "C:/Users/Admin/Desktop/Kafka/spark_streaming.py:/opt/spark-apps/spark_streaming.py"
+      - "C:/Users/Admin/Desktop/Kafka/spark_data:/opt/spark-data"
+    command: >
+      /opt/spark/bin/spark-submit
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.postgresql:postgresql:42.6.0
+      /opt/spark-apps/spark_streaming.py
+
+# ========================
+# Volumes
+# ========================
+volumes:
+  pgdata:
+  spark_data:
